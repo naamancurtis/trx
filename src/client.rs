@@ -14,8 +14,7 @@ use tracing::{instrument, warn};
 
 use std::{collections::hash_map::Entry, fmt};
 
-use crate::amount::Amount;
-use crate::transaction_state::{Transaction, TransactionType};
+use crate::{Amount, Transaction, TransactionType};
 
 /// Holds all transactional data related to a specific client.
 ///
@@ -27,8 +26,8 @@ use crate::transaction_state::{Transaction, TransactionType};
 ///
 /// ```
 /// use lib::client::Client;
-/// use lib::transaction_state::TransactionType;
-/// use lib::amount::Amount;
+/// use lib::TransactionType;
+/// use lib::Amount;
 ///
 /// let mut client = Client::new(1);
 ///
@@ -44,6 +43,9 @@ pub struct Client {
     available: Amount,
 }
 
+/// An enum representation of the status of the account
+///
+/// If an account is frozen, no further transactions can take place
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccountStatus {
     Active,

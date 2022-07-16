@@ -5,7 +5,7 @@
 The binary outputs to stdout, so you can easily redirect the output to a file
 
 ```sh
-cargo run  -- <path> > accounts.csv
+cargo run  -- <path> > <output file>
 
 # concrete example
 
@@ -23,12 +23,14 @@ The binary can be tested with the default rust toolchain
 cargo test
 ```
 
-This will run both the unit and integration tests
+This will run both the unit and integration tests.
+
+The benchmarks for now are a local only thing _(mainly due to the fact that the file they run off is too large to be
+committed to git)_. Please contact me for a demo.
 
 ### Assets
 
-A number of test assets can be found in the `test_assets` directory. _Note_ the `huge` directory hasn't been validated
-for correctness manually. The data was generated to have a slightly larger dataset
+A number of test assets can be found in the `test_assets` directory.
 
 ## Docs
 
@@ -37,6 +39,28 @@ Rust docs can be built and viewed locally via
 ```sh
 cargo doc --open
 ```
+
+## Solutions & Benchmarks
+
+I have currently implemented two _flavours_ of solutions for this problem
+1. A fully syncronous, single threaded process
+2. An async _actor-like_ pattern using `tokio::tasks`
+
+### Performance
+
+| name | performance | details |
+|---|---| ---|
+|`single-thread`| [ 5.0570s, 5.1943s, 5.4030s ]| 5,000,000 CSV Rows, 10 iterations|
+|`async-actor-like`| [ 6.0155s, 6.0699s, 6.1309s ]| 5,000,000 CSV Rows, 10 iterations|
+
+#### Commentary
+
+The above performance was largely what I expected given the compute performed on each CSV row is minimal.
+
+Although the async-actor-like solution leverages concurrency to process rows concurrently, the over head of creating async tasks,
+waking up tasks, context switching and message passing isn't amortized over the compute that's being performed. If the
+input was coming over the web, with other network calls _ie. to some persistant storage_ interweaved in, then we would
+likely see this benefit start to materialize.
 
 ## Assumptions
 
@@ -87,14 +111,18 @@ fact that the transaction amounts are in fiat currency _(from a quick search a m
 are a few that go to 3 and 4dp)_, and the requirements specify to carry transactions through to 4dp, makes me believe
 this is a safe assumption.
 
-### Transaction ID Uniqueness
-
-The spec mentions that the transaction ID is _globally unique_, as such I will make the assumption that there is no need to track
-previously seen ID's and verify that they aren't duplicated. Eg. We couldn't run into a scenario where we get a Deposit with ID 1,
-then get another deposit with ID 1.
-
 ## Improvements to make if I had more time
 
 - There's a reasonable amount of hashing going on for lookups and inserts, I'm reasonably certain this could be optimised throughout the app.
 - Can always improve the amount of testing/test coverage, both at a unit and integration level. On a similar note, also improve the assertions which were done very quickly.
   - Potentially use a crate such as [spectral](https://docs.rs/spectral/latest/spectral/)
+- Improve the error paradigm throughout the application. In a quick project something like `anyhow` or `eyre` is okay,
+  however for something that is looking to go into production, I prefer something more robust - ideally without _magic_
+  strings everywhere
+- Telemetry, I've not included a `tracing::subscriber` primarily because I'm not sure if automated tests will look at
+  performance, and any form of telemetry emission will have an effect on that. Similarly I can't log to `stdout` given
+  the requirements of how the binrary will be invoked.
+    - Having said that, this project does include enough telemetry to get started (the event emission is implemented)
+      however it could probably do some re-visiting and tidying up.
+- If this was to move into a production setting, I'd tidy up the library, putting features & dependencies behind feature
+  flags, so consumers could easily choose how they want to consume the library

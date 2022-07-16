@@ -9,6 +9,25 @@ use std::fmt;
 
 use crate::amount::Amount;
 
+#[derive(Deserialize, Serialize)]
+pub struct IncomingTransaction {
+    #[serde(rename = "type")]
+    pub ty: TransactionType,
+    pub client: u16,
+    pub tx: u32,
+    pub amount: Option<Amount>,
+}
+
+impl fmt::Debug for IncomingTransaction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Transaction")
+            .field("type", &self.ty)
+            .field("client", &self.client)
+            .field("tx", &self.tx)
+            .finish()
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum TransactionType {

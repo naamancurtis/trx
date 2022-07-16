@@ -2,8 +2,8 @@ use csv::{ReaderBuilder, Trim};
 use paste::paste;
 use pretty_assertions::assert_eq;
 
-use lib::clients::Clients;
-use lib::clients::IncomingTransaction;
+use lib::clients::SyncClients;
+use lib::IncomingTransaction;
 
 macro_rules! test_dir {
     ($dir:literal) => {
@@ -14,7 +14,7 @@ macro_rules! test_dir {
                 let mut reader = ReaderBuilder::new().trim(Trim::All)
                     .from_path(std::path::PathBuf::from(&format!("./test_assets/{}/spec.csv", $dir)))?;
 
-                let mut clients: Clients = Default::default();
+                let mut clients: SyncClients = Default::default();
                 let iter = reader.deserialize::<IncomingTransaction>();
                 clients.process(iter)?;
 

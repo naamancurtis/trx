@@ -16,7 +16,7 @@ const PRECISION: u32 = 4;
 /// purposes.
 ///
 /// 1. To enforce the requirement of carrying 4dp through the application
-/// 2. To ensure that the transaction amount is not printable (ie. ![`Debug`]). Given that logs
+/// 2. To ensure that the transaction amount is not printable (ie. ![`std::fmt::Debug`]). Given that logs
 ///    could be shipped to an external 3rd party for processing, it is likely we wouldn't want to
 ///    log specific transaction amounts. If we did log transaction amounts and this data was
 ///    compromised, it would allow a malicious actor to establish the highest value clients, and
@@ -33,7 +33,8 @@ const PRECISION: u32 = 4;
 ///
 /// ## Debug & Display not allowed
 ///
-/// Do not remove the two doc-tests below, they assure that [`Amount`] does not implement [`Debug`]
+/// Do not remove the two doc-tests below, they assure that [`Amount`] does not implement
+/// [`std::fmt::Debug`]
 /// or [`std::fmt::Display`]
 ///
 /// ```compile_fail

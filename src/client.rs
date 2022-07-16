@@ -37,6 +37,7 @@ use crate::Amount;
 /// }
 /// ```
 pub struct Client {
+    /// The Unique ID associated with this client
     pub id: u16,
     status: AccountStatus,
     transaction_log: FnvHashMap<u32, Option<Transaction>>,
@@ -64,26 +65,26 @@ impl Client {
         }
     }
 
-    /// A getter method used for the [`Serialize`] implementation
+    /// A getter method identifying whether this client's account is locked
     pub fn is_locked(&self) -> bool {
         self.status == AccountStatus::Frozen
     }
 
-    /// A getter method used for the [`Serialize`] implementation
+    /// A getter method used to calculate the total funds for this client
     pub fn total_funds(&self) -> Result<f32> {
         (self.available + self.held)
             .try_into()
             .wrap_err("unexpected error occurred when attempting to calculate total funds")
     }
 
-    /// A getter method used for the [`Serialize`] implementation
+    /// A getter method used to retrieve the available funds for this client
     pub fn available_funds(&self) -> Result<f32> {
         self.available
             .try_into()
             .wrap_err("unexpected error occurred when attempting to calculate available funds")
     }
 
-    /// A getter method used for the [`Serialize`] implementation
+    /// A getter method used to retrieve the held funds for this client
     pub fn held_funds(&self) -> Result<f32> {
         self.held
             .try_into()
@@ -100,13 +101,12 @@ impl Client {
     ///
     /// An error from this function indicates that processing should stop for this client
     ///
-    /// ## Ignore
+    /// ## Ignores
     ///
-    /// This function will ignore an invalid requests, whether that be due to:
+    /// This function will ignore _and return `Ok(())`_ for any invalid transactions, whether that be due to:
     /// - Invalid state transtions
-    /// - No funds to carry out a withdrawal
+    /// - Not enough funds to carry out a withdrawal
     /// - Invalid data (eg. A deposit or withdrawal with no amount)
-    ///
     #[instrument(level = "debug", skip(self, amount), fields(client_id = %self.id), err)]
     pub fn process_transaction(
         &mut self,
@@ -122,8 +122,8 @@ impl Client {
             ));
         }
 
+        // In this case we have a brand new transaction we've not seen before
         if !self.transaction_log.contains_key(&transaction_id) {
-            // In this case we have a brand new transaction we've not seen before
             match transaction_type {
                 TransactionType::Deposit if amount.is_some() => {
                     self.deposit(transaction_id, amount.unwrap())
@@ -143,7 +143,7 @@ impl Client {
         }
 
         match self.transaction_log.remove(&transaction_id) {
-            // We have a transaction stored under this id
+            // We currently have a transaction stored under this id
             Some(Some(trx)) => {
                 match trx.transition(transaction_type) {
                     Ok(state_change) => match state_change {
@@ -163,7 +163,7 @@ impl Client {
                 }
             }
             // A transaction with this id has already been resolved in some manner
-            // - This handles duplicate transaction ids (after it has already been resolved)
+            // - This handles duplicate transaction ids
             Some(None) => {
                 warn!(
                     "attempted to process transaction id: {} which has already been processed",

@@ -9,6 +9,7 @@ use std::fmt;
 
 use crate::amount::Amount;
 
+/// The format of the expected input data
 #[derive(Deserialize, Serialize)]
 pub struct IncomingTransaction {
     #[serde(rename = "type")]
@@ -28,6 +29,7 @@ impl fmt::Debug for IncomingTransaction {
     }
 }
 
+/// The types of transaction that can occur
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum TransactionType {
@@ -38,8 +40,9 @@ pub enum TransactionType {
     Chargeback,
 }
 
+#[allow(dead_code)]
 #[derive(Copy, Clone, PartialEq)]
-pub enum Transaction {
+pub(crate) enum Transaction {
     Deposit { amount: Amount },
     Withdrawal { amount: Amount },
     Dispute { amount: Amount },

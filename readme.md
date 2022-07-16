@@ -27,7 +27,7 @@ This repo can be tested with the default rust toolchain
 cargo test
 ```
 
-This will run both the unit, doc and integration tests.
+This will run the unit, doc and integration tests.
 
 The benchmarks can be run with
 
@@ -45,7 +45,7 @@ Rust docs can be built and viewed locally via
 cargo doc --open
 ```
 
-this is recommended in order explore what is exposed in the crate
+this is recommended in order explore what is exposed in the crate and examples of how to use it
 
 ## Solutions & Benchmarks
 

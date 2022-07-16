@@ -1,7 +1,7 @@
 //! # Trx
 //!
 //! This library is focused on exposing a very lightweight api through which to drive
-//! a simple transaction engine.
+//! a simple _toy_ transaction/payments engine.
 //!
 //! The main entry point for library is to implement one of the `*-Client` traits - [`SyncClients`] or
 //! [`AsyncClients`].

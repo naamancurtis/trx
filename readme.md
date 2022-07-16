@@ -1,5 +1,9 @@
 # Trx
 
+<p align="center">
+  <img src="https://github.com/naamancurtis/trx/actions/workflows/ci.yaml/badge.svg">
+</p>
+
 ## Running the binary
 
 The binary outputs to stdout, so you can easily redirect the output to a file
@@ -31,9 +35,7 @@ The benchmarks can be run with
 cargo bench
 ```
 
-### Assets
-
-A number of test assets can be found in the `test_assets` directory.
+A number of test assets can be found in the [test_assets](test_assets) directory.
 
 ## Docs
 
@@ -57,18 +59,18 @@ The default entry-point to the binary exposed by this repository uses the `singl
 
 ### Performance
 
-The below benchmarks were generated off the same dataset as the flamegraphs, unfortunately it's too large to commit to 
-GitHub, but contains 5,000,000 CSV rows and approximately 250 unique clients. 
+The below benchmarks were generated off the same dataset as the flamegraphs, unfortunately it's too large to commit to
+GitHub, but contains 5,000,000 CSV rows and approximately 250 unique clients.
 
 _Note:_ the data set used to generate the
 below results is different to the one that will be included if you run `cargo bench` - which is currently pointing to
 `test_assets/larger`.
 
-| name               | performance                   |
-| ------------------ | ----------------------------- |
-| `single-thread`    | `[4.3701s, 4.3879s, 4.4114s]` |
-| `multi-thread`     | `[7.3678s, 7.5490s, 7.7421s]` |
-| `async-task` | `[6.4912s, 6.5779s, 6.6718s]` |
+| name            | performance                   |
+| --------------- | ----------------------------- |
+| `single-thread` | `[4.3701s, 4.3879s, 4.4114s]` |
+| `multi-thread`  | `[7.3678s, 7.5490s, 7.7421s]` |
+| `async-task`    | `[6.4912s, 6.5779s, 6.6718s]` |
 
 #### Commentary
 
@@ -79,8 +81,8 @@ Although the concurrency based solutions in theory allow multiple rows to be pro
 the overhead associated with the concurrency _ie. passing & receiving messages through channels, managing wake-ups etc_
 end up contributing more to the overall runtime than if the data was just processed sequentially.
 
-This is primarily true as the solutions implemented attempt to process the data in as close to _"real time" 
-(ie. we process the record as soon as it comes in)_ as possible, . 
+This is primarily true as the solutions implemented attempt to process the data in as close to _"real time"
+(ie. we process the record as soon as it comes in)_ as possible, .
 
 If eventual consistency was acceptable, it's possible that an epoch based solution might allow for better concurrency and
 _possibly_ overall perfomance gains - a solution where you would collect all data for an epoch and then resolve it in
@@ -110,6 +112,7 @@ CSV rows with approximately 250 unique clients - _unfortunately this dataset is 
 ### Dispute mechanism
 
 **My interpretation of this requirement**
+
 - In the case of a `Dispute` on a `Deposit`. In this scenario it implies that through some
   mechanism external to the system, the client has forcefully reversed a transaction `Chargeback`. For example they've asked their
   card issuer to cancel a deposit before the funds were actually released to the system. This implies that either

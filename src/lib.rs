@@ -97,6 +97,7 @@ pub struct Cli {
 #[cfg(feature = "sync")]
 pub fn run_sync(path: PathBuf, mut clients: impl SyncClients) -> color_eyre::Result<()> {
     let mut reader = csv::ReaderBuilder::new()
+        .flexible(true)
         .trim(csv::Trim::All)
         .from_path(path)?;
     let iter = reader.deserialize::<transaction::IncomingTransaction>();
@@ -116,6 +117,7 @@ pub async fn run_async(
     mut clients: impl AsyncClients + Send + Sync,
 ) -> color_eyre::Result<()> {
     let mut reader = csv::ReaderBuilder::new()
+        .flexible(true)
         .trim(csv::Trim::All)
         .from_path(path)?;
     let iter = reader.deserialize::<transaction::IncomingTransaction>();

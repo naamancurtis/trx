@@ -59,7 +59,7 @@ impl Client {
         Self {
             id: client_id,
             status: AccountStatus::Active,
-            transaction_log: FnvHashMap::with_capacity_and_hasher(5, Default::default()),
+            transaction_log: FnvHashMap::with_capacity_and_hasher(28, Default::default()),
             available: Amount::default(),
             held: Amount::default(),
         }

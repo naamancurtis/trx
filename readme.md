@@ -49,7 +49,7 @@ this is recommended in order explore what is exposed in the crate and examples o
 
 ## Solutions & Benchmarks
 
-There are 3 available solutions to this problem - please generate the docs to read more about how each one works
+There are 3 available solutions to this problem included in this repository - please generate the docs to read more about how each one works in more detail
 
 1. A [single-threaded synchronous client](src/clients/synchronous.rs) (aka `single-thread`)
 2. A [multi-threaded client](src/clients/stream_like.rs) _(think of a simplified version of Kafka or AWS Kinesis)_ (aka `multi-thread`)
@@ -82,7 +82,7 @@ the overhead associated with the concurrency _ie. passing & receiving messages t
 end up contributing more to the overall runtime than if the data was just processed sequentially.
 
 This is primarily true as the solutions implemented attempt to process the data in as close to _"real time"
-(ie. we process the record as soon as it comes in)_ as possible, .
+(ie. we process the record as soon as it comes in)_ as possible.
 
 If eventual consistency was acceptable, it's possible that an epoch based solution might allow for better concurrency and
 _possibly_ overall perfomance gains - a solution where you would collect all data for an epoch and then resolve it in
@@ -172,6 +172,7 @@ this is a safe assumption.
   the requirements of how the binary will be invoked.
   - Having said that, this project does include enough telemetry to get started (the event emission is implemented)
     however it could probably do some re-visiting and tidying up.
+- Use some form of actual data store instead of holding everything in memory
 
 ## Security
 

@@ -14,7 +14,9 @@ macro_rules! test_sync {
         paste ! {
             #[test]
             fn [<run_ $dir _ $client:snake _test>]() -> color_eyre::Result<()> {
-                let mut reader = ReaderBuilder::new().trim(Trim::All)
+                let mut reader = ReaderBuilder::new()
+                    .trim(Trim::All)
+                    .flexible(true)
                     .from_path(std::path::PathBuf::from(&format!("./test_assets/{}/spec.csv", $dir)))?;
 
                 let mut clients: $client = Default::default();
@@ -54,7 +56,9 @@ macro_rules! test_async {
         paste ! {
             #[tokio::test]
             async fn [<run_ $dir _ $client:snake _test>]() -> color_eyre::Result<()> {
-                let mut reader = ReaderBuilder::new().trim(Trim::All)
+                let mut reader = ReaderBuilder::new()
+                    .trim(Trim::All)
+                    .flexible(true)
                     .from_path(std::path::PathBuf::from(&format!("./test_assets/{}/spec.csv", $dir)))?;
 
                 let mut clients: $client = Default::default();

@@ -14,7 +14,8 @@ use tracing::{instrument, warn};
 
 use std::{collections::hash_map::Entry, fmt};
 
-use crate::{Amount, Transaction, TransactionType};
+use crate::transaction::{Transaction, TransactionType};
+use crate::Amount;
 
 /// Holds all transactional data related to a specific client.
 ///
@@ -26,7 +27,7 @@ use crate::{Amount, Transaction, TransactionType};
 ///
 /// ```
 /// use lib::client::Client;
-/// use lib::TransactionType;
+/// use lib::transaction::TransactionType;
 /// use lib::Amount;
 ///
 /// let mut client = Client::new(1);
@@ -36,7 +37,7 @@ use crate::{Amount, Transaction, TransactionType};
 /// }
 /// ```
 pub struct Client {
-    id: u16,
+    pub id: u16,
     status: AccountStatus,
     transaction_log: FnvHashMap<u32, Option<Transaction>>,
     held: Amount,
@@ -64,26 +65,26 @@ impl Client {
     }
 
     /// A getter method used for the [`Serialize`] implementation
-    fn is_locked(&self) -> bool {
+    pub fn is_locked(&self) -> bool {
         self.status == AccountStatus::Frozen
     }
 
     /// A getter method used for the [`Serialize`] implementation
-    fn total_funds(&self) -> Result<f32> {
+    pub fn total_funds(&self) -> Result<f32> {
         (self.available + self.held)
             .try_into()
             .wrap_err("unexpected error occurred when attempting to calculate total funds")
     }
 
     /// A getter method used for the [`Serialize`] implementation
-    fn available_funds(&self) -> Result<f32> {
+    pub fn available_funds(&self) -> Result<f32> {
         self.available
             .try_into()
             .wrap_err("unexpected error occurred when attempting to calculate available funds")
     }
 
     /// A getter method used for the [`Serialize`] implementation
-    fn held_funds(&self) -> Result<f32> {
+    pub fn held_funds(&self) -> Result<f32> {
         self.held
             .try_into()
             .wrap_err("unexpected error occurred when attempting to calculate held funds")
@@ -95,12 +96,16 @@ impl Client {
     ///
     /// This function will error if:
     /// 1. The account status of the client is [`AccountStatus::Frozen`]
-    /// 2. This client has already processed this transaction_id and the transaction type is
-    ///    `Deposit` OR `Withdrawal`.
+    /// 2. An unexpected error occurs
+    ///
+    /// An error from this function indicates that processing should stop for this client
     ///
     /// ## Ignore
-    /// 1. It will ignore any invalid state transitions - _this will handle duplicate transactions
-    ///    for the other transaction types._
+    ///
+    /// This function will ignore an invalid requests, whether that be due to:
+    /// - Invalid state transtions
+    /// - No funds to carry out a withdrawal
+    /// - Invalid data (eg. A deposit or withdrawal with no amount)
     ///
     #[instrument(level = "debug", skip(self, amount), fields(client_id = %self.id), err)]
     pub fn publish_transaction(
@@ -111,35 +116,43 @@ impl Client {
     ) -> Result<()> {
         if self.status == AccountStatus::Frozen {
             warn!("unable to carry out transaction as account is frozen");
+            // TODO - Make this a matchable enum
             return Err(eyre!(
-                "unable to carry out transaction when the account is frozen"
+                "[FROZEN_ACCOUNT]: unable to carry out transaction when the account is frozen"
             ));
         }
 
         match self.transaction_log.remove(&transaction_id) {
+            // We have a transaction stored under this id
             Some(Some(trx)) => {
                 match trx.transition(transaction_type) {
                     Ok(state_change) => match state_change {
                         Transaction::Dispute { amount } => self.dispute(transaction_id, amount),
                         Transaction::Resolve { amount } => self.resolve(transaction_id, amount),
-                        Transaction::Chargeback { amount } => self.chargeback(amount),
-                        _ => Err(eyre!("an unexpected error occured, it should not be possible to make this transition"))
+                        Transaction::Chargeback { amount } => {
+                            self.chargeback(amount);
+                            return Err(eyre!("[FROZEN_ACCOUNT] this client account '{}' has been frozen, no further transactions can occur", self.id));
+                        },
+                        _ => return Err(eyre!("an unexpected error occured, it should not be possible to make this transition"))
                     }
-                    Err(e) => {
+                    // In this case, an invalid state transition has occurred
+                    // so we ignore it
+                    Err(_) => {
                         self.transaction_log.insert(transaction_id, Some(trx));
-                        Err(e)
                     }
                 }
             }
-            // This transaction has already been resolved in some manner
+            // A transaction with this id has already been resolved in some manner
+            // - This handles duplicate transaction ids (after it has already been resolved)
             Some(None) => {
-                let msg = format!("attempted to process transaction id: {} which has already been processed", transaction_id);
-                warn!("{}", &msg);
+                warn!(
+                    "attempted to process transaction id: {} which has already been processed",
+                    transaction_id
+                );
                 self.transaction_log.insert(transaction_id, None);
-                Err(eyre!(msg))
             }
 
-            // This is a brand new transaction
+            // This is a brand new transaction we have not seen before
             None => match transaction_type {
                 TransactionType::Deposit if amount.is_some() => {
                     self.deposit(transaction_id, amount.unwrap())
@@ -147,64 +160,61 @@ impl Client {
                 TransactionType::Withdrawal if amount.is_some() => {
                     self.withdraw(transaction_id, amount.unwrap())
                 }
-                TransactionType::Deposit | TransactionType::Withdrawal => Err(eyre!(
+                TransactionType::Deposit | TransactionType::Withdrawal => warn!(
                     "unable to process transition type {:?} when no amount is provided",
                     transaction_type
-                )),
-                _ => Err(eyre!("Unable to process transaction type {:?} as transaction id: {} does not exist for client {}", transaction_type, transaction_id, self.id))
+                ),
+                _ => {
+                    warn!("Unable to process transaction type {:?} as transaction id: {} does not exist for client {}", transaction_type, transaction_id, self.id);
+                }
             },
         }
+        Ok(())
     }
 
-    /// Handles a deposit transaction for this client_id
-    ///
-    /// It will error if the provided transaction_id has been seen before
-    fn deposit(&mut self, transaction_id: u32, amount: Amount) -> Result<()> {
+    fn deposit(&mut self, transaction_id: u32, amount: Amount) {
         match self.transaction_log.entry(transaction_id) {
             Entry::Occupied(_) => {
-                return Err(eyre!(
-                    "we have already processed transaction id {}",
+                warn!(
+                    "we have already processed transaction id {}, therefore we're ignoring this",
                     transaction_id
-                ))
+                );
             }
             Entry::Vacant(v) => {
                 v.insert(Some(Transaction::Deposit { amount }));
                 self.available += amount;
             }
         }
-        Ok(())
     }
 
-    fn withdraw(&mut self, transaction_id: u32, amount: Amount) -> Result<()> {
+    fn withdraw(&mut self, transaction_id: u32, amount: Amount) {
         match self.transaction_log.entry(transaction_id) {
-            Entry::Occupied(_) => Err(eyre!(
-                "we have already processed transaction id {}",
-                transaction_id
-            )),
+            Entry::Occupied(_) => {
+                warn!(
+                    "we have already processed transaction id {}, therefore we're ignoring this",
+                    transaction_id
+                );
+            }
             Entry::Vacant(v) => {
                 if self.available >= amount {
                     self.available -= amount;
                     v.insert(None);
-                    Ok(())
                 } else {
-                    Err(eyre!(
-                        "unable to withdraw as the account does not have enough available funds"
-                    ))
+                    warn!("unable to withdraw as the account does not have enough available funds")
                 }
             }
         }
     }
 
-    fn dispute(&mut self, transaction_id: u32, amount: Amount) -> Result<()> {
+    fn dispute(&mut self, transaction_id: u32, amount: Amount) {
         self.available -= amount;
         self.held += amount;
 
         self.transaction_log
             .insert(transaction_id, Some(Transaction::Dispute { amount }));
-        Ok(())
     }
 
-    fn resolve(&mut self, transaction_id: u32, amount: Amount) -> Result<()> {
+    fn resolve(&mut self, transaction_id: u32, amount: Amount) {
         self.held -= amount;
         self.available += amount;
 
@@ -212,12 +222,12 @@ impl Client {
         // in the readme.
         //
         // If we enter this state, this transaction id can no longer be modified, therefore we can
-        // completely remove the associated data.
+        // completely remove the associated data. However we keep the transaction id so we don't
+        // re-process if it gets passed through again
         self.transaction_log.insert(transaction_id, None);
-        Ok(())
     }
 
-    fn chargeback(&mut self, amount: Amount) -> Result<()> {
+    fn chargeback(&mut self, amount: Amount) {
         self.held -= amount;
         self.status = AccountStatus::Frozen;
 
@@ -231,7 +241,6 @@ impl Client {
         // we would need a way to re-populate the transaction log should the account become
         // unfrozen.
         self.transaction_log.clear();
-        Ok(())
     }
 }
 
@@ -282,6 +291,8 @@ mod tests {
     use pretty_assertions::assert_eq;
     use serde::Deserialize;
 
+    const ALLOWABLE_ERROR: f32 = 0.000049;
+
     impl Clone for Client {
         fn clone(&self) -> Self {
             Self {
@@ -296,13 +307,7 @@ mod tests {
 
     #[test]
     fn can_be_serialized() -> Result<()> {
-        let client = Client {
-            id: 1,
-            available: Amount::new(22.2f32)?,
-            held: Amount::new(3.32f32)?,
-            status: AccountStatus::Active,
-            transaction_log: Default::default(),
-        };
+        let client = client_with_state();
         let mut result = vec![];
         {
             let mut writer = csv::Writer::from_writer(&mut result);
@@ -336,13 +341,8 @@ mod tests {
 
     #[test]
     fn errors_if_the_account_is_frozen() -> Result<()> {
-        let mut client = Client {
-            id: 1,
-            available: Amount::new(20f32)?,
-            held: Amount::default(),
-            status: AccountStatus::Frozen,
-            transaction_log: Default::default(),
-        };
+        let mut client = client_with_state();
+        client.status = AccountStatus::Frozen;
         let tx_id = 1;
         for tx in &[
             TransactionType::Deposit,
@@ -389,70 +389,39 @@ mod tests {
 
     #[test]
     fn handles_a_deposit_with_a_duplicate_transaction_id() -> Result<()> {
-        let mut client = Client::new(1);
+        let before = client_with_state();
+        let mut after = before.clone();
         let tx_id = 1;
         let tx_amt = 1.23f32;
-        client.publish_transaction(tx_id, TransactionType::Deposit, Some(Amount::new(tx_amt)?))?;
-        assert_eq!(
-            client.transaction_log.len(),
-            1,
-            "transaction log has a size of 1"
-        );
-        let prev_available_funds = client.available_funds()?;
-        assert_eq!(prev_available_funds, tx_amt);
-
-        // duplicate
-        let result =
-            client.publish_transaction(tx_id, TransactionType::Deposit, Some(Amount::new(tx_amt)?));
-        assert!(result.is_err(), "duplicate transaction should error");
-
-        let log_data = client.transaction_log.get(&tx_id);
-        assert!(
-            log_data.is_some(),
-            "the existing transaction should still be there"
-        );
-        assert!(
-            log_data.unwrap().is_some(),
-            "the existing nested transaction id should still be there"
-        );
-        let is_deposit_type = matches!(log_data.unwrap().unwrap(), Transaction::Deposit { .. });
-        assert!(
-            is_deposit_type,
-            "the existing deposit type should still be there"
-        );
-        assert_eq!(
-            prev_available_funds,
-            client.available_funds()?,
-            "available funds shouldn't increase"
-        );
+        after.publish_transaction(tx_id, TransactionType::Deposit, Some(Amount::new(tx_amt)?))?;
+        check_has_not_mutated_state(before, after)?;
 
         Ok(())
     }
 
     #[test]
     fn handles_a_withdrawal_with_a_new_transaction_id() -> Result<()> {
-        let mut client = Client {
-            id: 1,
-            available: Amount::new(20f32)?,
-            held: Amount::default(),
-            status: AccountStatus::Active,
-            transaction_log: Default::default(),
-        };
-        let tx_id = 1;
+        let before = client_with_state();
+        let mut after = before.clone();
+        let tx_id = 3;
         let tx_amt = 1.23f32;
-        client.publish_transaction(
+        after.publish_transaction(
             tx_id,
             TransactionType::Withdrawal,
             Some(Amount::new(tx_amt)?),
         )?;
         assert_eq!(
-            client.transaction_log.len(),
-            1,
-            "transaction log has a size of 1"
+            after.transaction_log.len(),
+            3,
+            "the withdrawal transaction should be added to the log"
         );
-        assert_eq!(client.available_funds()?, 20f32 - tx_amt);
-        assert_eq!(client.held_funds()?, 0f32);
-        let log_data = client.transaction_log.get(&tx_id);
+        assert_eq!(after.available_funds()?, before.available_funds()? - tx_amt);
+        assert_eq!(
+            before.held_funds()?,
+            after.held_funds()?,
+            "held funds should not change"
+        );
+        let log_data = after.transaction_log.get(&tx_id);
         assert!(
             log_data.is_some(),
             "the transaction id should be present in the log"
@@ -466,76 +435,39 @@ mod tests {
 
     #[test]
     fn handles_a_duplicate_withdrawal_request() -> Result<()> {
-        let mut client = Client {
-            id: 1,
-            available: Amount::new(20f32)?,
-            held: Amount::default(),
-            status: AccountStatus::Active,
-            transaction_log: Default::default(),
-        };
-        let tx_id = 1;
+        let mut before = client_with_state();
+        let tx_id = 3;
         let tx_amt = 1.23f32;
-        client.publish_transaction(
+        before.publish_transaction(
             tx_id,
             TransactionType::Withdrawal,
             Some(Amount::new(tx_amt)?),
         )?;
-        assert_eq!(
-            client.transaction_log.len(),
-            1,
-            "transaction log has a size of 1"
-        );
-        let expected_available_funds = 20f32 - tx_amt;
-        let prev_available_funds = client.available_funds()?;
-        assert_eq!(prev_available_funds, expected_available_funds);
-
-        // duplicate
-        let result = client.publish_transaction(
+        let mut after = before.clone();
+        after.publish_transaction(
             tx_id,
             TransactionType::Withdrawal,
             Some(Amount::new(tx_amt)?),
-        );
-        assert!(result.is_err(), "duplicate transaction should error");
-
-        let log_data = client.transaction_log.get(&tx_id);
-        assert!(
-            log_data.is_some(),
-            "the existing transaction should still be there"
-        );
-        assert!(
-            log_data.unwrap().is_none(),
-            "we don't need to store any data for withdrawals other than the transaction id"
-        );
-        assert_eq!(
-            prev_available_funds,
-            client.available_funds()?,
-            "available funds shouldn't decrease"
-        );
-
+        )?;
+        check_has_not_mutated_state(before, after)?;
         Ok(())
     }
 
     #[test]
     fn handles_a_dispute_on_a_deposit() -> Result<()> {
-        let mut client = Client::new(1);
+        let mut client = client_with_state();
         let tx_id = 1;
-        let tx_amt = 1.23f32;
-        client.publish_transaction(tx_id, TransactionType::Deposit, Some(Amount::new(tx_amt)?))?;
-        assert_eq!(
-            client.transaction_log.len(),
-            1,
-            "transaction log has a size of 1"
-        );
         let previous_available_balance = client.available_funds()?;
+        let previous_held_balance = client.held_funds()?;
         client.publish_transaction(tx_id, TransactionType::Dispute, None)?;
         assert_eq!(
             client.available_funds()?,
             0f32,
             "available funds should be reduced to zero"
         );
-        assert_eq!(
-            client.held_funds()?,
-            previous_available_balance,
+        assert!(
+            (client.held_funds()? - (previous_held_balance + previous_available_balance)).abs()
+                < ALLOWABLE_ERROR,
             "all funds should now be held"
         );
 
@@ -555,60 +487,26 @@ mod tests {
 
     #[test]
     fn should_ignore_duplicate_dispute_requests() -> Result<()> {
-        let mut client = Client::new(1);
+        let mut before = client_with_state();
         let tx_id = 1;
-        let tx_amt = 1.23f32;
-        client.publish_transaction(tx_id, TransactionType::Deposit, Some(Amount::new(tx_amt)?))?;
-        assert_eq!(
-            client.transaction_log.len(),
-            1,
-            "transaction log has a size of 1"
-        );
-        let previous_available_balance = client.available_funds()?;
-        client.publish_transaction(tx_id, TransactionType::Dispute, None)?;
-        let res = client.publish_transaction(tx_id, TransactionType::Dispute, None);
-        assert!(res.is_err());
-        assert_eq!(
-            client.available_funds()?,
-            0f32,
-            "available funds should be reduced to zero"
-        );
-        assert_eq!(
-            client.held_funds()?,
-            previous_available_balance,
-            "all funds should now be held"
-        );
+        before.publish_transaction(tx_id, TransactionType::Dispute, None)?;
+        let mut after = before.clone();
+        after.publish_transaction(tx_id, TransactionType::Dispute, None)?;
 
-        let log_data = client.transaction_log.get(&tx_id);
-        assert!(
-            log_data.is_some(),
-            "the transaction id should be present in the log"
-        );
-        assert!(
-            log_data.unwrap().is_some(),
-            "the nested transaction id should be some"
-        );
-        let tx_type = matches!(log_data.unwrap().unwrap(), Transaction::Dispute { .. });
-        assert!(tx_type, "the transaction should be of type dispute");
+        check_has_not_mutated_state(before, after)?;
         Ok(())
     }
 
     #[test]
     fn handles_a_resolve_on_a_dispute() -> Result<()> {
-        let mut client = Client::new(1);
-        let tx_id = 1;
-        let tx_amt = 1.23f32;
-        client.publish_transaction(tx_id, TransactionType::Deposit, Some(Amount::new(tx_amt)?))?;
-        assert_eq!(
-            client.transaction_log.len(),
-            1,
-            "transaction log has a size of 1"
-        );
-        client.publish_transaction(tx_id, TransactionType::Dispute, None)?;
+        let mut client = client_with_state();
+        let tx_id = 2;
+        let previous_available_funds = client.available_funds()?;
+        let previous_held_balance = client.held_funds()?;
         client.publish_transaction(tx_id, TransactionType::Resolve, None)?;
-        assert_eq!(
-            client.available_funds()?,
-            tx_amt,
+        assert!(
+            (client.available_funds()? - (previous_held_balance + previous_available_funds)).abs()
+                < ALLOWABLE_ERROR,
             "available funds should be back to the full amount"
         );
         assert_eq!(client.held_funds()?, 0f32, "held funds should be back to 0");
@@ -616,7 +514,7 @@ mod tests {
         let log_data = client.transaction_log.get(&tx_id);
         assert!(
             log_data.is_some(),
-            "the transaction id should be present in the log"
+            "the transaction id should still be present in the log"
         );
         assert!(
             log_data.unwrap().is_none(),
@@ -627,110 +525,74 @@ mod tests {
 
     #[test]
     fn should_ignore_duplicate_resolve_requests() -> Result<()> {
-        let mut client = Client::new(1);
-        let tx_id = 1;
-        let tx_amt = 1.23f32;
-        client.publish_transaction(tx_id, TransactionType::Deposit, Some(Amount::new(tx_amt)?))?;
-        assert_eq!(
-            client.transaction_log.len(),
-            1,
-            "transaction log has a size of 1"
-        );
-        client.publish_transaction(tx_id, TransactionType::Dispute, None)?;
-        client.publish_transaction(tx_id, TransactionType::Resolve, None)?;
-        let res = client.publish_transaction(tx_id, TransactionType::Resolve, None);
-        assert!(res.is_err());
-        assert_eq!(
-            client.available_funds()?,
-            tx_amt,
-            "available funds should be back to the full amount"
-        );
-        assert_eq!(client.held_funds()?, 0f32, "held funds should be back to 0");
+        let mut before = client_with_state();
+        let tx_id = 2;
+        before.publish_transaction(tx_id, TransactionType::Resolve, None)?;
+        let mut after = before.clone();
+        after.publish_transaction(tx_id, TransactionType::Resolve, None)?;
 
-        let log_data = client.transaction_log.get(&tx_id);
-        assert!(
-            log_data.is_some(),
-            "the transaction id should be present in the log"
-        );
-        assert!(
-            log_data.unwrap().is_none(),
-            "we no longer need to hold transaction data"
-        );
+        check_has_not_mutated_state(before, after)?;
         Ok(())
     }
 
     #[test]
     fn handles_a_chargeback_on_a_dispute() -> Result<()> {
-        let mut client = Client::new(1);
-        let tx_id = 1;
-        let tx_amt = 1.23f32;
-        client.publish_transaction(tx_id, TransactionType::Deposit, Some(Amount::new(tx_amt)?))?;
-        assert_eq!(
-            client.transaction_log.len(),
-            1,
-            "transaction log has a size of 1"
+        let mut client = client_with_state();
+        let tx_id = 2;
+        let previous_available_funds = client.available_funds()?;
+        let err = client.publish_transaction(tx_id, TransactionType::Chargeback, None);
+        assert!(
+            err.is_err(),
+            "expected a failure from a publish transaction as the account is locked"
         );
-        client.publish_transaction(tx_id, TransactionType::Dispute, None)?;
-        client.publish_transaction(tx_id, TransactionType::Chargeback, None)?;
         assert_eq!(
             client.available_funds()?,
-            0f32,
-            "available funds should be 0 if a chargeback occurs"
+            previous_available_funds,
+            "available funds should not be touched when a chargeback occurs"
         );
         assert_eq!(
             client.held_funds()?,
             0f32,
-            "held funds should be 0 if a chargeback occurs"
-        );
-        assert_eq!(
-            client.status,
-            AccountStatus::Frozen,
-            "the account should be frozen"
+            "held funds should reduce when a chargeback occurs"
         );
 
         assert_eq!(
             client.transaction_log.len(),
             0,
-            "the transaction log should have been emptied"
+            "when a chargeback occurs we can clear the transaction log"
+        );
+        assert_eq!(
+            client.status,
+            AccountStatus::Frozen,
+            "the client should be frozen when a chargeback occurs"
         );
         Ok(())
     }
 
     #[test]
     fn handles_illegal_transitions_from_deposit() -> Result<()> {
-        let mut client = Client::new(1);
+        let before = client_with_state();
         let tx_id = 1;
         let tx_amt = 1.23f32;
-        client.publish_transaction(tx_id, TransactionType::Deposit, Some(Amount::new(tx_amt)?))?;
 
         for transition in &[
             TransactionType::Withdrawal,
             TransactionType::Resolve,
             TransactionType::Chargeback,
         ] {
-            let mut cli = client.clone();
-            let prev_funds = cli.available_funds()?;
-            let prev_total_funds = cli.total_funds()?;
-            let result = cli.publish_transaction(tx_id, *transition, Some(Amount::new(tx_amt)?));
-            assert!(result.is_err());
-            assert_eq!(prev_funds, cli.available_funds()?);
-            assert_eq!(prev_total_funds, cli.total_funds()?);
+            let mut after = before.clone();
+            after.publish_transaction(tx_id, *transition, Some(Amount::new(tx_amt)?))?;
+            check_has_not_mutated_state(before.clone(), after)?;
         }
         Ok(())
     }
 
     #[test]
     fn handles_illegal_transitions_from_withdrawal() -> Result<()> {
-        let mut client = Client {
-            id: 1,
-            available: Amount::new(20f32)?,
-            held: Amount::default(),
-            status: AccountStatus::Active,
-            transaction_log: Default::default(),
-        };
-        let tx_id = 1;
+        let mut before = client_with_state();
+        let tx_id = 3;
         let tx_amt = 1.23f32;
-        client.publish_transaction(
+        before.publish_transaction(
             tx_id,
             TransactionType::Withdrawal,
             Some(Amount::new(tx_amt)?),
@@ -742,45 +604,33 @@ mod tests {
             TransactionType::Resolve,
             TransactionType::Chargeback,
         ] {
-            let mut cli = client.clone();
-            let prev_funds = cli.available_funds()?;
-            let prev_total_funds = cli.total_funds()?;
-            let result = cli.publish_transaction(tx_id, *transition, Some(Amount::new(tx_amt)?));
-            assert!(result.is_err());
-            assert_eq!(prev_funds, cli.available_funds()?);
-            assert_eq!(prev_total_funds, cli.total_funds()?);
+            let mut after = before.clone();
+            after.publish_transaction(tx_id, *transition, Some(Amount::new(tx_amt)?))?;
+            check_has_not_mutated_state(before.clone(), after)?;
         }
         Ok(())
     }
 
     #[test]
     fn handles_illegal_transitions_from_dispute() -> Result<()> {
-        let mut client = Client::new(1);
-        let tx_id = 1;
+        let before = client_with_state();
+        let tx_id = 2;
         let tx_amt = 1.23f32;
-        client.publish_transaction(tx_id, TransactionType::Deposit, Some(Amount::new(tx_amt)?))?;
-        client.publish_transaction(tx_id, TransactionType::Dispute, None)?;
 
         for transition in &[TransactionType::Deposit, TransactionType::Withdrawal] {
-            let mut cli = client.clone();
-            let prev_funds = cli.available_funds()?;
-            let prev_total_funds = cli.total_funds()?;
-            let result = cli.publish_transaction(tx_id, *transition, Some(Amount::new(tx_amt)?));
-            assert!(result.is_err());
-            assert_eq!(prev_funds, cli.available_funds()?);
-            assert_eq!(prev_total_funds, cli.total_funds()?);
+            let mut after = before.clone();
+            after.publish_transaction(tx_id, *transition, Some(Amount::new(tx_amt)?))?;
+            check_has_not_mutated_state(before.clone(), after)?;
         }
         Ok(())
     }
 
     #[test]
     fn handles_illegal_transitions_from_resolve() -> Result<()> {
-        let mut client = Client::new(1);
-        let tx_id = 1;
+        let mut before = client_with_state();
+        let tx_id = 2;
         let tx_amt = 1.23f32;
-        client.publish_transaction(tx_id, TransactionType::Deposit, Some(Amount::new(tx_amt)?))?;
-        client.publish_transaction(tx_id, TransactionType::Dispute, None)?;
-        client.publish_transaction(tx_id, TransactionType::Resolve, None)?;
+        before.publish_transaction(tx_id, TransactionType::Resolve, None)?;
 
         for transition in &[
             TransactionType::Deposit,
@@ -788,13 +638,63 @@ mod tests {
             TransactionType::Dispute,
             TransactionType::Chargeback,
         ] {
-            let mut cli = client.clone();
-            let prev_funds = cli.available_funds()?;
-            let prev_total_funds = cli.total_funds()?;
-            let result = cli.publish_transaction(tx_id, *transition, Some(Amount::new(tx_amt)?));
-            assert!(result.is_err());
-            assert_eq!(prev_funds, cli.available_funds()?);
-            assert_eq!(prev_total_funds, cli.total_funds()?);
+            let mut after = before.clone();
+            after.publish_transaction(tx_id, *transition, Some(Amount::new(tx_amt)?))?;
+            check_has_not_mutated_state(before.clone(), after)?;
+        }
+        Ok(())
+    }
+
+    fn client_with_state() -> Client {
+        let mut log: FnvHashMap<u32, Option<Transaction>> = Default::default();
+        let available = Amount::new(20.32f32).unwrap();
+        let held = Amount::new(3.14923f32).unwrap();
+        log.insert(1, Some(Transaction::Deposit { amount: available }));
+        log.insert(2, Some(Transaction::Dispute { amount: held }));
+        Client {
+            id: 1,
+            available,
+            held,
+            status: AccountStatus::Active,
+            transaction_log: log,
+        }
+    }
+
+    fn check_has_not_mutated_state(before: Client, after: Client) -> Result<()> {
+        assert_eq!(
+            before.available_funds()?,
+            after.available_funds()?,
+            "expected that available funds would not change"
+        );
+        assert_eq!(
+            before.held_funds()?,
+            after.held_funds()?,
+            "expected that held funds would not change"
+        );
+        assert_eq!(
+            before.total_funds()?,
+            after.total_funds()?,
+            "expected that total funds would not change"
+        );
+        assert_eq!(
+            before.is_locked(),
+            after.is_locked(),
+            "expected that account status would not change"
+        );
+        let rhs_log = &after.transaction_log;
+        for (k, v) in before.transaction_log.iter() {
+            let rhs_value = rhs_log.get(k);
+            assert!(
+                rhs_value.is_some(),
+                "expected the transaction log to have an entry for transaction {}",
+                k
+            );
+            let rhs_value = rhs_value.unwrap();
+            assert_eq!(
+                v, rhs_value,
+                "expected transaction state for transaction {} to not have changed",
+                k
+            );
         }
         Ok(())
     }

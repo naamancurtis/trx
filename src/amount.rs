@@ -10,6 +10,9 @@ use std::ops::{Add, AddAssign, Sub, SubAssign};
 /// The precision we want to carry any decimal based operations to.
 const PRECISION: u32 = 4;
 
+/// A wrapper around [`Decimal`] in order to perform mathematic calculates on decimals with a
+/// higher precision, alongside gaining some security benefits.
+///
 /// This uses Bankers Rounding rules as a [`rust_decimal::RoundingStrategy`]
 ///
 /// This is a wrapper type for the transaction amount, it serves two primary

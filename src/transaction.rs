@@ -38,7 +38,7 @@ pub enum TransactionType {
     Chargeback,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Transaction {
     Deposit { amount: Amount },
     Withdrawal { amount: Amount },

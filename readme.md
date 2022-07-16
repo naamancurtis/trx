@@ -121,8 +121,6 @@ this is a safe assumption.
   strings everywhere
 - Telemetry, I've not included a `tracing::subscriber` primarily because I'm not sure if automated tests will look at
   performance, and any form of telemetry emission will have an effect on that. Similarly I can't log to `stdout` given
-  the requirements of how the binrary will be invoked.
+  the requirements of how the binary will be invoked.
     - Having said that, this project does include enough telemetry to get started (the event emission is implemented)
       however it could probably do some re-visiting and tidying up.
-- If this was to move into a production setting, I'd tidy up the library, putting features & dependencies behind feature
-  flags, so consumers could easily choose how they want to consume the library

@@ -1,6 +1,6 @@
 //! An implementation that runs on the tokio runtime asynchronously
 //!
-//! Each unique client get's their own task spun up, which processes transactions
+//! Each unique client gets their own task spun up, which processes transactions
 //! related to that client. Ordering is maintained through the channel used to pass messages.
 //!
 //! It's in this way that is is fairly similar to the `actor pattern` where each task
@@ -10,9 +10,9 @@
 //! # Examples
 //!
 //! ```
-//! use lib::AsyncClients;
+//! use lib::AsyncEngine;
 //! use lib::transaction::IncomingTransaction;
-//! use lib::clients::actor_like::Clients;
+//! use lib::engines::ActorLikeEngine;
 //! use csv::{ReaderBuilder, Trim};
 //! use std::path::PathBuf;
 //! use std::io;
@@ -21,10 +21,10 @@
 //! async fn main() {
 //!     let path = PathBuf::from("./test_assets/simple/spec.csv");
 //!     let mut reader = ReaderBuilder::new().trim(Trim::All).from_path(path).unwrap();
-//!     let mut clients: Clients = Default::default();
+//!     let mut engine: ActorLikeEngine = Default::default();
 //!     let iter = reader.deserialize::<IncomingTransaction>();
-//!     clients.process(iter).await.unwrap();
-//!     clients.output(io::stdout()).await.unwrap();
+//!     engine.process(iter).await.unwrap();
+//!     engine.output(io::stdout()).await.unwrap();
 //! }
 //! ```
 
@@ -39,12 +39,12 @@ use tracing::{error, warn};
 use std::io::Write;
 use std::mem;
 
-use crate::client::Client;
+use crate::storage::{Client, ClientStorage};
 use crate::transaction::IncomingTransaction;
 
-use super::AsyncClients;
+use super::AsyncEngine;
 
-/// An aysnc implementation which processes each client independtly
+/// An aysnc implementation which processes each client independently
 ///
 /// Behind the scenes it creates a [`tokio::task`] for each client. Any csv row associated
 /// with that client is then sent to the task through a channel.
@@ -55,13 +55,13 @@ use super::AsyncClients;
 /// traffic, we won't really see a benefit to this approach. However should those things be
 /// introduced we should quickly start to see the benefits.
 #[derive(Default)]
-pub struct Clients {
+pub struct ActorLikeEngine {
     join_handles: Vec<JoinHandle<Client>>,
     channels: FnvHashMap<u16, UnboundedSender<IncomingTransaction>>,
 }
 
 #[async_trait]
-impl AsyncClients for Clients {
+impl AsyncEngine for ActorLikeEngine {
     async fn publish_transaction(&mut self, transaction: IncomingTransaction) -> Result<()> {
         let client_id = transaction.client;
         if let Some(c) = self.channels.get(&client_id) {

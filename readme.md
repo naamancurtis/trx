@@ -49,13 +49,13 @@ this is recommended in order explore what is exposed in the crate and examples o
 
 ## Solutions & Benchmarks
 
-There are 3 available solutions to this problem included in this repository - please generate the docs to read more about how each one works in more detail
+There are 3 available engines which solve this problem included in this repository - please generate the docs to read more about how each one works in more detail
 
-1. A [single-threaded synchronous client](src/clients/synchronous.rs) (aka `single-thread`)
-2. A [multi-threaded client](src/clients/stream_like.rs) _(think of a simplified version of Kafka or AWS Kinesis)_ (aka `multi-thread`)
-3. An [async task based client](src/clients/actor_like.rs) _(could be viewed as a simplified actor pattern)_ (aka `async-task`)
+1. A [single-threaded synchronous engine](src/engines/basic.rs) (aka `basic`)
+2. A [multi-threaded engine](src/engines/stream_like.rs) _(think of a simplified version of Kafka or AWS Kinesis)_ (aka `stream-like`)
+3. An [async task based engine](src/engines/actor_like.rs) _(could be viewed as a simplified actor pattern)_ (aka `actor-like`)
 
-The default entry-point to the binary exposed by this repository uses the `single-thread` implementation.
+The default entry-point to the binary exposed by this repository uses the `basic (single-threaded)` implementation.
 
 ### Performance
 
@@ -66,16 +66,16 @@ _Note:_ the data set used to generate the
 below results is different to the one that will be included if you run `cargo bench` - which is currently pointing to
 `test_assets/larger`.
 
-| name            | performance                   |
-| --------------- | ----------------------------- |
-| `single-thread` | `[4.3701s, 4.3879s, 4.4114s]` |
-| `multi-thread`  | `[7.3678s, 7.5490s, 7.7421s]` |
-| `async-task`    | `[6.4912s, 6.5779s, 6.6718s]` |
+| name          | flavor                 | performance                   |
+| ------------- | ---------------------- | ----------------------------- |
+| `basic`       | `single-threaded-sync` | `[4.3701s, 4.3879s, 4.4114s]` |
+| `stream-like` | `multi-threaded-sync`  | `[7.3678s, 7.5490s, 7.7421s]` |
+| `actor-like`  | `async-task`           | `[6.4912s, 6.5779s, 6.6718s]` |
 
 #### Commentary
 
 The above performance was largely what I expected given the compute performed on each CSV row is minimal - _some basic
-mathematical operations and a few hashmap lookups/inserts_.
+mathematical operations and a few hashmap lookups/inserts/removals_.
 
 Although the concurrency based solutions in theory allow multiple rows to be processed at the same time,
 the overhead associated with the concurrency _ie. passing & receiving messages through channels, managing wake-ups etc_
@@ -92,20 +92,20 @@ though, at this point it is just an idea.
 
 ##### FlameGraphs
 
-There are flamegraphs available for the 3 implementations - these were generated running over an identical data set of 5,000,000
+There are flamegraphs available for the 3 implementations - these were generated running over an identical data _(same as the benchmarks)_ set of 5,000,000
 CSV rows with approximately 250 unique clients - _unfortunately this dataset is too large to upload to GitHub_. These can be found in the [flamegraph directory](/flamegraphs) or below
 
-###### [Single-Thread](https://raw.githubusercontent.com/naamancurtis/trx/main/flamegraphs/single-thread-flamegraph.svg)
+###### [Single-Thread](https://raw.githubusercontent.com/naamancurtis/trx/main/flamegraphs/basic-flamegraph.svg)
 
-![Single-thread implementation flamegraph](./flamegraphs/single-thread-flamegraph.svg)
+![Single-thread implementation flamegraph](./flamegraphs/basic-flamegraph.svg)
 
-###### [Multi-Thread](https://raw.githubusercontent.com/naamancurtis/trx/main/flamegraphs/multi-thread-flamegraph.svg)
+###### [Multi-Thread](https://raw.githubusercontent.com/naamancurtis/trx/main/flamegraphs/stream-like-flamegraph.svg)
 
-![Multi-thread implementation flamegraph](./flamegraphs/multi-thread-flamegraph.svg)
+![Multi-thread implementation flamegraph](./flamegraphs/stream-like-flamegraph.svg)
 
-###### [Async](https://raw.githubusercontent.com/naamancurtis/trx/main/flamegraphs/async-flamegraph.svg)
+###### [Async](https://raw.githubusercontent.com/naamancurtis/trx/main/flamegraphs/actor-like-flamegraph.svg)
 
-![async implementation flamegraph](./flamegraphs/async-flamegraph.svg)
+![async implementation flamegraph](./flamegraphs/actor-like-flamegraph.svg)
 
 ## Assumptions
 

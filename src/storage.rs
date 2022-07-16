@@ -1,5 +1,5 @@
-//! Holds the _largely internal_ representation of a client, however it's exposed as the core
-//! state machine is exposed through [`Client`].
+//! This module relates to the storage of state required to properly process the
+//! internals of an engine
 
 use color_eyre::{
     eyre::{eyre, WrapErr},
@@ -17,6 +17,63 @@ use std::{collections::hash_map::Entry, fmt};
 use crate::transaction::{Transaction, TransactionType};
 use crate::Amount;
 
+/// Represents the state and state transitions that a client must store
+/// in order to be processed by the payment engine.
+pub trait ClientStorage {
+    /// A getter method identifying whether this client's account is locked
+    fn id(&self) -> u16;
+
+    /// A getter method identifying whether this client's account is locked
+    fn is_locked(&self) -> bool;
+
+    /// A getter method used to calculate the total funds for this client
+    fn total_funds(&self) -> Result<f32>;
+
+    /// A getter method used to retrieve the available funds for this client
+    fn available_funds(&self) -> Result<f32>;
+
+    /// A getter method used to retrieve the held funds for this client
+    fn held_funds(&self) -> Result<f32>;
+
+    /// Processes the incoming transaction
+    ///
+    /// ## Errors
+    ///
+    /// This function should error if:
+    /// 1. The account status of the client is [`AccountStatus::Frozen`]
+    /// 2. An unexpected error occurs
+    ///
+    /// An error from this function indicates that processing should stop for this client
+    ///
+    /// ## Ignores
+    ///
+    /// This function should ignore _and return `Ok(())`_ for any invalid transactions, whether that be due to:
+    /// - Invalid state transtions
+    /// - Not enough funds to carry out a withdrawal
+    /// - Invalid data (eg. A deposit or withdrawal with no amount)
+    fn process_transaction(
+        &mut self,
+        transaction_id: u32,
+        transaction_type: TransactionType,
+        amount: Option<Amount>,
+    ) -> Result<()>;
+
+    /// This will update the internally held totals on the funds and insert an entry in the
+    /// transaction log
+    ///
+    /// If this provided transaction id has already been processed, this should ignore it
+    fn deposit(&mut self, transaction_id: u32, amount: Amount);
+
+    /// This will update the internally held totals on the funds and insert an entry in the
+    /// transaction log
+    ///
+    /// If this provided transaction id has already been processed, this should ignore it
+    fn withdraw(&mut self, transaction_id: u32, amount: Amount);
+    fn dispute(&mut self, transaction_id: u32, amount: Amount);
+    fn resolve(&mut self, transaction_id: u32, amount: Amount);
+    fn chargeback(&mut self, transaction_id: u32, amount: Amount);
+}
+
 /// Holds all transactional data related to a specific client.
 ///
 /// The public API is minimal in order to enforce the state machine held
@@ -26,7 +83,7 @@ use crate::Amount;
 /// ## Examples
 ///
 /// ```
-/// use lib::client::Client;
+/// use lib::storage::{Client, ClientStorage};
 /// use lib::transaction::TransactionType;
 /// use lib::Amount;
 ///
@@ -64,28 +121,34 @@ impl Client {
             held: Amount::default(),
         }
     }
+}
+
+impl ClientStorage for Client {
+    fn id(&self) -> u16 {
+        self.id
+    }
 
     /// A getter method identifying whether this client's account is locked
-    pub fn is_locked(&self) -> bool {
+    fn is_locked(&self) -> bool {
         self.status == AccountStatus::Frozen
     }
 
     /// A getter method used to calculate the total funds for this client
-    pub fn total_funds(&self) -> Result<f32> {
+    fn total_funds(&self) -> Result<f32> {
         (self.available + self.held)
             .try_into()
             .wrap_err("unexpected error occurred when attempting to calculate total funds")
     }
 
     /// A getter method used to retrieve the available funds for this client
-    pub fn available_funds(&self) -> Result<f32> {
+    fn available_funds(&self) -> Result<f32> {
         self.available
             .try_into()
             .wrap_err("unexpected error occurred when attempting to calculate available funds")
     }
 
     /// A getter method used to retrieve the held funds for this client
-    pub fn held_funds(&self) -> Result<f32> {
+    fn held_funds(&self) -> Result<f32> {
         self.held
             .try_into()
             .wrap_err("unexpected error occurred when attempting to calculate held funds")
@@ -108,13 +171,13 @@ impl Client {
     /// - Not enough funds to carry out a withdrawal
     /// - Invalid data (eg. A deposit or withdrawal with no amount)
     #[instrument(level = "debug", skip(self, amount), fields(client_id = %self.id), err)]
-    pub fn process_transaction(
+    fn process_transaction(
         &mut self,
         transaction_id: u32,
         transaction_type: TransactionType,
         amount: Option<Amount>,
     ) -> Result<()> {
-        if self.status == AccountStatus::Frozen {
+        if self.is_locked() {
             warn!("unable to carry out transaction as account is frozen");
             // TODO - Make this a matchable enum
             return Err(eyre!(
@@ -150,7 +213,7 @@ impl Client {
                         Transaction::Dispute { amount } => self.dispute(transaction_id, amount),
                         Transaction::Resolve { amount } => self.resolve(transaction_id, amount),
                         Transaction::Chargeback { amount } => {
-                            self.chargeback(amount);
+                            self.chargeback(transaction_id, amount);
                             return Err(eyre!("[FROZEN_ACCOUNT] this client account '{}' has been frozen, no further transactions can occur", self.id));
                         },
                         _ => return Err(eyre!("an unexpected error occured, it should not be possible to make this transition"))
@@ -240,7 +303,7 @@ impl Client {
         self.transaction_log.insert(transaction_id, None);
     }
 
-    fn chargeback(&mut self, amount: Amount) {
+    fn chargeback(&mut self, _transaction_id: u32, amount: Amount) {
         self.held -= amount;
         self.status = AccountStatus::Frozen;
 

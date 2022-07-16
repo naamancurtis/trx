@@ -5,6 +5,9 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+# [profile.release]
+# debug = true
+
 [lib]
 name = "lib"
 path = "src/lib.rs"
@@ -18,10 +21,10 @@ name = "benchmark"
 harness = false
 
 [features]
-default = ["sync_client", "actor_client", "stream_client"]
-sync_client = ["sync"]
-actor_client = ["async"]
-stream_client = ["dep:crossbeam-channel", "dep:num_cpus"]
+default = ["basic_engine", "actor_engine", "stream_engine"]
+basic_engine = ["sync"]
+actor_engine = ["async"]
+stream_engine = ["dep:crossbeam-channel", "dep:num_cpus", "basic_engine"]
 async = ["dep:tokio", "dep:async-trait", "dep:futures"]
 sync = []
 

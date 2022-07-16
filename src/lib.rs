@@ -3,12 +3,12 @@
 //! This library is focused on exposing a very lightweight api through which to drive
 //! a simple _toy_ transaction/payments engine.
 //!
-//! The main entry point for library is to implement one of the `*-Client` traits - [`SyncClients`] or
-//! [`AsyncClients`].
-//! These clients require an iterator over a [`IncomingTransaction`] to process and each have their own
+//! The main entry point for library is to implement one of the `*-Engine` traits - [`SyncEngine`] or
+//! [`AsyncEngine`].
+//! These engines require an iterator over a [`IncomingTransaction`] to process and each have their own
 //! style of how they distribute the workload.
 //!
-//! This library also provides a number of already implemented clients - see [`clients`] for
+//! This library also provides a number of already implemented engines - see [`engines`] for
 //! examples
 //!
 //! ## Examples
@@ -16,61 +16,64 @@
 //! ### Single-Threaded
 //!
 //! ```
-//! use lib::{SyncClients, run_sync};
-//! use lib::clients::synchronous::Clients;
+//! use lib::{SyncEngine, run_sync};
+//! use lib::engines::BasicEngine;
 //! use std::path::PathBuf;
 //!
 //! let path = PathBuf::from("./test_assets/simple/spec.csv");
-//! let clients: Clients = Default::default();
+//! let engine: BasicEngine = Default::default();
 //!
-//! run_sync(path, clients).unwrap();
+//! run_sync(path, engine).unwrap();
 //! ```
 //!
 //! ### Multi-Threaded
 //!
 //! ```
-//! use lib::{SyncClients, run_sync};
-//! use lib::clients::stream_like::Clients;
+//! use lib::{SyncEngine, run_sync};
+//! use lib::engines::StreamLikeEngine;
 //! use std::path::PathBuf;
 //!
 //! let path = PathBuf::from("./test_assets/simple/spec.csv");
-//! let clients: Clients = Default::default();
+//! let engine: StreamLikeEngine = Default::default();
 //!
-//! run_sync(path, clients).unwrap();
+//! run_sync(path, engine).unwrap();
 //! ```
 //!
 //! ### Async
 //!
 //! ```rust
-//! use lib::{AsyncClients, run_async};
-//! use lib::clients::actor_like::Clients;
+//! use lib::{AsyncEngine, run_async};
+//! use lib::engines::ActorLikeEngine;
 //! use std::path::PathBuf;
 //!
 //! #[tokio::main]
 //! async fn main() {
 //!     let path = PathBuf::from("./test_assets/simple/spec.csv");
-//!     let clients: Clients = Default::default();
-//!     run_async(path, clients).await.unwrap();
+//!     let engine: ActorLikeEngine = Default::default();
+//!     run_async(path, engine).await.unwrap();
 //! }
 //! ```
 //!
 //! [`IncomingTransaction`]: crate::transaction::IncomingTransaction
 
 pub mod amount;
-pub mod client;
-pub mod clients;
+pub mod engines;
+pub mod storage;
 pub mod transaction;
 
 #[doc(inline)]
 pub use amount::Amount;
 
 #[doc(inline)]
+pub use storage::ClientStorage;
+
+#[doc(inline)]
 #[cfg(feature = "async")]
-pub use clients::AsyncClients;
+pub use engines::AsyncEngine;
 
 #[doc(inline)]
 #[cfg(feature = "sync")]
-pub use clients::SyncClients;
+pub use engines::SyncEngine;
 
 #[doc(no_inline)]
 pub use clap::Parser;
@@ -95,17 +98,17 @@ pub struct Cli {
 /// A helper function to read a csv file from the provided path, process it synchronously and
 /// write the result to `stdout`
 #[cfg(feature = "sync")]
-pub fn run_sync(path: PathBuf, mut clients: impl SyncClients) -> color_eyre::Result<()> {
+pub fn run_sync(path: PathBuf, mut engine: impl SyncEngine) -> color_eyre::Result<()> {
     let mut reader = csv::ReaderBuilder::new()
         .flexible(true)
         .trim(csv::Trim::All)
         .from_path(path)?;
     let iter = reader.deserialize::<transaction::IncomingTransaction>();
-    clients.process(iter)?;
+    engine.process(iter)?;
     let mut writer = csv::WriterBuilder::new()
         .from_writer(std::io::stdout())
         .into_inner()?;
-    clients.output(&mut writer)?;
+    engine.output(&mut writer)?;
     Ok(())
 }
 
@@ -114,17 +117,17 @@ pub fn run_sync(path: PathBuf, mut clients: impl SyncClients) -> color_eyre::Res
 #[cfg(feature = "async")]
 pub async fn run_async(
     path: PathBuf,
-    mut clients: impl AsyncClients + Send + Sync,
+    mut engine: impl AsyncEngine + Send + Sync,
 ) -> color_eyre::Result<()> {
     let mut reader = csv::ReaderBuilder::new()
         .flexible(true)
         .trim(csv::Trim::All)
         .from_path(path)?;
     let iter = reader.deserialize::<transaction::IncomingTransaction>();
-    clients.process(iter).await?;
+    engine.process(iter).await?;
     let mut writer = csv::WriterBuilder::new()
         .from_writer(std::io::stdout())
         .into_inner()?;
-    clients.output(&mut writer).await?;
+    engine.output(&mut writer).await?;
     Ok(())
 }

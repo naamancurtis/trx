@@ -5,19 +5,19 @@
 //! # Examples
 //!
 //! ```
-//! use lib::SyncClients;
+//! use lib::SyncEngine;
 //! use lib::transaction::IncomingTransaction;
-//! use lib::clients::synchronous::Clients;
+//! use lib::engines::BasicEngine;
 //! use csv::{ReaderBuilder, Trim};
 //! use std::path::PathBuf;
 //! use std::io;
 //!
 //! let path = PathBuf::from("./test_assets/simple/spec.csv");
 //! let mut reader = ReaderBuilder::new().trim(Trim::All).from_path(path).unwrap();
-//! let mut clients: Clients = Default::default();
+//! let mut engine: BasicEngine = Default::default();
 //! let iter = reader.deserialize::<IncomingTransaction>();
-//! clients.process(iter).unwrap();
-//! clients.output(io::stdout()).unwrap();
+//! engine.process(iter).unwrap();
+//! engine.output(io::stdout()).unwrap();
 //! ```
 
 use color_eyre::Result;
@@ -25,19 +25,19 @@ use fnv::FnvHashMap;
 
 use std::io::Write;
 
-use crate::client::Client;
+use crate::storage::{Client, ClientStorage};
 use crate::transaction::IncomingTransaction;
 
-use super::SyncClients;
+use super::SyncEngine;
 
-/// A single threaded syncronous implementation of clients
+/// A single threaded synchronous implementation of an engine
 ///
 /// Each csv row is processed exactly in order and processing of
 /// the next row won't start until the previous is complete
 #[derive(Default)]
-pub struct Clients(FnvHashMap<u16, Client>);
+pub struct BasicEngine(FnvHashMap<u16, Client>);
 
-impl SyncClients for Clients {
+impl SyncEngine for BasicEngine {
     fn publish_transaction(
         &mut self,
         IncomingTransaction {
@@ -70,7 +70,7 @@ impl SyncClients for Clients {
     }
 }
 
-impl Clients {
+impl BasicEngine {
     /// Consumes `self` and returns an iterator over the currently stored [`Client`]
     pub(crate) fn clients(self) -> impl Iterator<Item = Client> {
         self.0.into_values()

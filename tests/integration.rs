@@ -2,29 +2,27 @@ use csv::{ReaderBuilder, Trim};
 use paste::paste;
 use pretty_assertions::assert_eq;
 
-use lib::clients::actor_like::Clients as ActorLikeClients;
-use lib::clients::stream_like::Clients as StreamLikeClients;
-use lib::clients::synchronous::Clients as SynchronousClients;
+use lib::engines::{ActorLikeEngine, BasicEngine, StreamLikeEngine};
 use lib::transaction::IncomingTransaction;
-use lib::{AsyncClients, SyncClients};
+use lib::{AsyncEngine, SyncEngine};
 
 macro_rules! test_sync {
-    ($dir:literal, $client:ty) => {
+    ($dir:literal, $engine:ty) => {
 
         paste ! {
             #[test]
-            fn [<run_ $dir _ $client:snake _test>]() -> color_eyre::Result<()> {
+            fn [<run_ $dir _ $engine:snake _test>]() -> color_eyre::Result<()> {
                 let mut reader = ReaderBuilder::new()
                     .trim(Trim::All)
                     .flexible(true)
                     .from_path(std::path::PathBuf::from(&format!("./test_assets/{}/spec.csv", $dir)))?;
 
-                let mut clients: $client = Default::default();
+                let mut engine: $engine = Default::default();
                 let iter = reader.deserialize::<IncomingTransaction>();
-                clients.process(iter)?;
+                engine.process(iter)?;
 
                 let mut result = vec![];
-                clients.output(&mut result)?;
+                engine.output(&mut result)?;
 
                 let mut results = ReaderBuilder::new().trim(Trim::All)
                     .from_reader(&*result)
@@ -51,22 +49,22 @@ macro_rules! test_sync {
 }
 
 macro_rules! test_async {
-    ($dir:literal, $client:ty) => {
+    ($dir:literal, $engine:ty) => {
 
         paste ! {
             #[tokio::test]
-            async fn [<run_ $dir _ $client:snake _test>]() -> color_eyre::Result<()> {
+            async fn [<run_ $dir _ $engine:snake _test>]() -> color_eyre::Result<()> {
                 let mut reader = ReaderBuilder::new()
                     .trim(Trim::All)
                     .flexible(true)
                     .from_path(std::path::PathBuf::from(&format!("./test_assets/{}/spec.csv", $dir)))?;
 
-                let mut clients: $client = Default::default();
+                let mut engine: $engine = Default::default();
                 let iter = reader.deserialize::<IncomingTransaction>();
-                clients.process(iter).await?;
+                engine.process(iter).await?;
 
                 let mut result = vec![];
-                clients.output(&mut result).await?;
+                engine.output(&mut result).await?;
 
                 let mut results = ReaderBuilder::new().trim(Trim::All)
                     .from_reader(&*result)
@@ -92,14 +90,17 @@ macro_rules! test_async {
     };
 }
 
-test_sync! { "simple", SynchronousClients }
-test_sync! { "single_client", SynchronousClients }
-test_sync! { "larger", SynchronousClients }
+test_sync! { "simple", BasicEngine }
+test_sync! { "single_client", BasicEngine }
+test_sync! { "larger", BasicEngine }
+test_sync! { "beyond_4_dp", BasicEngine }
 
-test_sync! { "simple", StreamLikeClients }
-test_sync! { "single_client", StreamLikeClients }
-test_sync! { "larger", StreamLikeClients }
+test_sync! { "simple", StreamLikeEngine }
+test_sync! { "single_client", StreamLikeEngine }
+test_sync! { "larger", StreamLikeEngine }
+test_sync! { "beyond_4_dp", StreamLikeEngine }
 
-test_async! { "simple", ActorLikeClients }
-test_async! { "single_client", ActorLikeClients }
-test_async! { "larger", ActorLikeClients }
+test_async! { "simple", ActorLikeEngine }
+test_async! { "single_client", ActorLikeEngine }
+test_async! { "larger", ActorLikeEngine }
+test_async! { "beyond_4_dp", ActorLikeEngine }

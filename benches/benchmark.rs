@@ -7,13 +7,11 @@ use tokio::runtime::Runtime;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use lib::clients::actor_like::Clients as ActorLikeClients;
-use lib::clients::stream_like::Clients as StreamLikeClients;
-use lib::clients::synchronous::Clients as SynchronousClients;
+use lib::engines::{ActorLikeEngine, BasicEngine, StreamLikeEngine};
 use lib::transaction::IncomingTransaction;
-use lib::{AsyncClients, SyncClients};
+use lib::{AsyncEngine, SyncEngine};
 
-fn run_sync(mut clients: impl SyncClients) -> Result<()> {
+fn run_sync(mut clients: impl SyncEngine) -> Result<()> {
     let mut reader = ReaderBuilder::new()
         .trim(Trim::All)
         .from_path(PathBuf::from("./test_assets/larger/spec.csv"))?;
@@ -24,7 +22,7 @@ fn run_sync(mut clients: impl SyncClients) -> Result<()> {
     Ok(())
 }
 
-async fn run_async(mut clients: impl AsyncClients + Send + Sync) -> Result<()> {
+async fn run_async(mut clients: impl AsyncEngine + Send + Sync) -> Result<()> {
     let mut reader = ReaderBuilder::new()
         .trim(Trim::All)
         .from_path(PathBuf::from("./test_assets/larger/spec.csv"))?;
@@ -36,22 +34,22 @@ async fn run_async(mut clients: impl AsyncClients + Send + Sync) -> Result<()> {
 }
 
 pub fn benchmark(c: &mut Criterion) {
-    let mut group = c.benchmark_group("trx");
+    let mut group = c.benchmark_group("trx-bench");
     group.sample_size(20);
     group.measurement_time(Duration::from_secs(30));
-    group.bench_function("single_threaded", |b| {
+    group.bench_function("basic", |b| {
         b.iter(|| {
-            black_box(run_sync(SynchronousClients::default()).ok());
+            black_box(run_sync(BasicEngine::default()).ok());
         })
     });
-    group.bench_function("multi_threaded", |b| {
+    group.bench_function("stream", |b| {
         b.iter(|| {
-            black_box(run_sync(StreamLikeClients::default()).ok());
+            black_box(run_sync(StreamLikeEngine::default()).ok());
         })
     });
-    group.bench_function("async_actor", |b| {
+    group.bench_function("actor", |b| {
         b.to_async(Runtime::new().unwrap())
-            .iter(|| black_box(run_async(ActorLikeClients::default())))
+            .iter(|| black_box(run_async(ActorLikeEngine::default())))
     });
     group.finish()
 }

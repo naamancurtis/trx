@@ -5,32 +5,32 @@
 //!
 //! For each incoming transaction, it's client id is identified and _"hashed"_ to
 //! identify which thread the transaction should be sent to. Each thread processes
-//! its transactions using the [`SyncClient`] implementation. In this manner you could
+//! its transactions using the [`BasicEngine`] implementation. In this manner you could
 //! visualize each `thread` representing a `partition` of a Kafka topic. With the task
 //! running in the thread acting as the `consumer`.
 //!
-//! Similar to [`SyncClient`], the overall ordering of transactions is maintained, however
+//! Similar to [`BasicEngine`], the overall ordering of transactions is maintained, however
 //! the workload is distributed over multiple threads.
 //!
 //! # Examples
 //!
 //! ```
-//! use lib::SyncClients;
+//! use lib::SyncEngine;
 //! use lib::transaction::IncomingTransaction;
-//! use lib::clients::stream_like::Clients;
+//! use lib::engines::StreamLikeEngine;
 //! use csv::{ReaderBuilder, Trim};
 //! use std::path::PathBuf;
 //! use std::io;
 //!
 //! let path = PathBuf::from("./test_assets/simple/spec.csv");
 //! let mut reader = ReaderBuilder::new().trim(Trim::All).from_path(path).unwrap();
-//! let mut clients: Clients = Default::default();
+//! let mut engine: StreamLikeEngine = Default::default();
 //! let iter = reader.deserialize::<IncomingTransaction>();
-//! clients.process(iter).unwrap();
-//! clients.output(io::stdout()).unwrap();
+//! engine.process(iter).unwrap();
+//! engine.output(io::stdout()).unwrap();
 //! ```
 //!
-//! [`SyncClient`]: crate::clients::synchronous::Clients
+//! [`BasicEngine`]: crate::engines::BasicEngine
 
 use color_eyre::Result;
 use crossbeam_channel::{unbounded, Sender, TryRecvError};
@@ -39,20 +39,20 @@ use tracing::error;
 use std::io::Write;
 use std::thread::{self, JoinHandle};
 
-use crate::clients::synchronous::Clients as SynchronousClients;
+use crate::engines::BasicEngine;
 use crate::transaction::IncomingTransaction;
 
-use super::SyncClients;
+use super::SyncEngine;
 
 /// A multi-threaded _stream-like/kafka-like_ implementation
 ///
-/// Each thread runs their own instance of [`SyncClient`](crate::clients::synchronous::Clients)
-pub struct Clients {
-    join_handles: Vec<JoinHandle<Result<SynchronousClients>>>,
+/// Each thread runs their own instance of [`BasicEngine`]
+pub struct StreamLikeEngine {
+    join_handles: Vec<JoinHandle<Result<BasicEngine>>>,
     channels: Vec<Sender<IncomingTransaction>>,
 }
 
-impl Default for Clients {
+impl Default for StreamLikeEngine {
     fn default() -> Self {
         let cpus = num_cpus::get();
         let mut join_handles = Vec::with_capacity(cpus);
@@ -60,7 +60,7 @@ impl Default for Clients {
         for _ in 0..cpus {
             let (s, r) = unbounded();
             let handle = thread::spawn(move || {
-                let mut client = SynchronousClients::default();
+                let mut client = BasicEngine::default();
                 'process: loop {
                     match r.try_recv() {
                         Ok(msg) => {
@@ -82,7 +82,7 @@ impl Default for Clients {
     }
 }
 
-impl SyncClients for Clients {
+impl SyncEngine for StreamLikeEngine {
     fn publish_transaction(&mut self, transaction: IncomingTransaction) -> Result<()> {
         let client_id = transaction.client;
         let bucket = client_id as usize % self.channels.len();

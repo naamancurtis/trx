@@ -1,3 +1,33 @@
+//! An implementation that runs on the tokio runtime asynchronously
+//!
+//! Each unique client get's their own task spun up, which processes transactions
+//! related to that client. Ordering is maintained through the channel used to pass messages.
+//!
+//! It's in this way that is is fairly similar to the `actor pattern` where each task
+//! has it's own functionality to carry out, and a mailbox to receive messages to carry out said
+//! task.
+//!
+//! # Examples
+//!
+//! ```
+//! use lib::AsyncClients;
+//! use lib::transaction::IncomingTransaction;
+//! use lib::clients::actor_like::Clients;
+//! use csv::{ReaderBuilder, Trim};
+//! use std::path::PathBuf;
+//! use std::io;
+//!
+//! #[tokio::main]
+//! async fn main() {
+//!     let path = PathBuf::from("./test_assets/simple/spec.csv");
+//!     let mut reader = ReaderBuilder::new().trim(Trim::All).from_path(path).unwrap();
+//!     let mut clients: Clients = Default::default();
+//!     let iter = reader.deserialize::<IncomingTransaction>();
+//!     clients.process(iter).await.unwrap();
+//!     clients.output(io::stdout()).await.unwrap();
+//! }
+//! ```
+
 use async_trait::async_trait;
 use color_eyre::{eyre::eyre, Result};
 use fnv::FnvHashMap;
@@ -14,7 +44,7 @@ use crate::transaction::IncomingTransaction;
 
 use super::AsyncClients;
 
-/// An Aysnc implementation of Clients
+/// An aysnc implementation which processes each client independtly
 ///
 /// Behind the scenes it creates a [`tokio::task`] for each client. Any csv row associated
 /// with that client is then sent to the task through a channel.

@@ -30,15 +30,14 @@ const PRECISION: u32 = 4;
 /// - Under the guise of this exercise, the intended **construction** method for this type is through
 /// the deserialization of CSVs. As such the constructor is private, and no construction methods
 /// are offered in the public API. This would be re-visited if requirements change.
-/// - This type should not implement [`std::ops::Deref`] or [`std::ops::DerefMut`] without careful
-/// consideration, as doing so would potentially allow [`std::fmt::Debug`] & [`std::fmt::Display`] implementations
+/// - This type should not implement [`Deref`] or [`DerefMut`] without careful
+/// consideration, as doing so would potentially allow [`Debug`] & [`Display`] implementations
 /// through the dereferencing through to the [`Decimal`] type.
 ///
 /// ## Debug & Display not allowed
 ///
 /// Do not remove the two doc-tests below, they assure that [`Amount`] does not implement
-/// [`std::fmt::Debug`]
-/// or [`std::fmt::Display`]
+/// [`Debug`] or [`Display`]
 ///
 /// ```compile_fail
 /// use lib::amount::Amount;
@@ -57,6 +56,10 @@ const PRECISION: u32 = 4;
 ///
 /// println!("{}", amount);
 /// ```
+/// [`Debug`]: std::fmt::Debug
+/// [`Display`]: std::fmt::Display
+/// [`Deref`]: std::ops::Deref
+/// [`DerefMut`]: std::ops::DerefMut
 #[derive(PartialEq, PartialOrd, Clone, Copy, Serialize)]
 pub struct Amount(Decimal);
 

@@ -1,3 +1,25 @@
+//! An implementation that runs within a single thread.
+//!
+//! Each transaction gets processed in the order it is received before moving into the next one
+//!
+//! # Examples
+//!
+//! ```
+//! use lib::SyncClients;
+//! use lib::transaction::IncomingTransaction;
+//! use lib::clients::synchronous::Clients;
+//! use csv::{ReaderBuilder, Trim};
+//! use std::path::PathBuf;
+//! use std::io;
+//!
+//! let path = PathBuf::from("./test_assets/simple/spec.csv");
+//! let mut reader = ReaderBuilder::new().trim(Trim::All).from_path(path).unwrap();
+//! let mut clients: Clients = Default::default();
+//! let iter = reader.deserialize::<IncomingTransaction>();
+//! clients.process(iter).unwrap();
+//! clients.output(io::stdout()).unwrap();
+//! ```
+
 use color_eyre::Result;
 use fnv::FnvHashMap;
 

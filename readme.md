@@ -124,3 +124,26 @@ this is a safe assumption.
   the requirements of how the binary will be invoked.
     - Having said that, this project does include enough telemetry to get started (the event emission is implemented)
       however it could probably do some re-visiting and tidying up.
+
+## Security
+
+```txt
+cargo audit
+    Fetching advisory database from `https://github.com/RustSec/advisory-db.git`
+      Loaded 421 security advisories (from /Users/naaman/.cargo/advisory-db)
+    Updating crates.io index
+    Scanning Cargo.lock for vulnerabilities (140 crate dependencies)
+Crate:     serde_cbor
+Version:   0.11.2
+Warning:   unmaintained
+Title:     serde_cbor is unmaintained
+Date:      2021-08-15
+ID:        RUSTSEC-2021-0127
+URL:       https://rustsec.org/advisories/RUSTSEC-2021-0127
+Dependency tree:
+serde_cbor 0.11.2
+└── criterion 0.3.6
+    └── transactions 0.1.0
+
+warning: 1 allowed warning found
+```

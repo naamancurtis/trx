@@ -5,7 +5,7 @@
 //!
 //! The main entry point for library is to implement one of the `*-Client` traits - [`SyncClients`] or
 //! [`AsyncClients`].
-//! These clients require an iterator of [`crate::transaction::IncomingTransaction`] to process and each have their own
+//! These clients require an iterator over a [`IncomingTransaction`] to process and each have their own
 //! style of how they distribute the workload.
 //!
 //! This library also provides a number of already implemented clients - see [`clients`] for
@@ -13,63 +13,48 @@
 //!
 //! ## Examples
 //!
-//! ### Single Threaded Synchronous
+//! ### Single-Threaded
 //!
 //! ```
-//! use lib::SyncClients;
-//! use lib::transaction::IncomingTransaction;
+//! use lib::{SyncClients, run_sync};
 //! use lib::clients::synchronous::Clients;
-//! use csv::{ReaderBuilder, Trim};
 //! use std::path::PathBuf;
-//! use std::io;
 //!
 //! let path = PathBuf::from("./test_assets/simple/spec.csv");
-//! let mut reader = ReaderBuilder::new().trim(Trim::All).from_path(path).unwrap();
-//! let mut clients: Clients = Default::default();
-//! let iter = reader.deserialize::<IncomingTransaction>();
-//! clients.process(iter).unwrap();
-//! clients.output(io::stdout()).unwrap();
+//! let clients: Clients = Default::default();
+//!
+//! run_sync(path, clients).unwrap();
 //! ```
 //!
 //! ### Multi-Threaded
 //!
 //! ```
-//! use lib::SyncClients;
-//! use lib::transaction::IncomingTransaction;
+//! use lib::{SyncClients, run_sync};
 //! use lib::clients::stream_like::Clients;
-//! use csv::{ReaderBuilder, Trim};
 //! use std::path::PathBuf;
-//! use std::io;
 //!
 //! let path = PathBuf::from("./test_assets/simple/spec.csv");
-//! let mut reader = ReaderBuilder::new().trim(Trim::All).from_path(path).unwrap();
-//! let mut clients: Clients = Default::default();
-//! let iter = reader.deserialize::<IncomingTransaction>();
-//! clients.process(iter).unwrap();
-//! clients.output(io::stdout()).unwrap();
+//! let clients: Clients = Default::default();
+//!
+//! run_sync(path, clients).unwrap();
 //! ```
 //!
 //! ### Async
 //!
 //! ```rust
-//! use lib::AsyncClients;
-//! use lib::transaction::IncomingTransaction;
+//! use lib::{AsyncClients, run_async};
 //! use lib::clients::actor_like::Clients;
-//!
-//! use csv::{ReaderBuilder, Trim};
 //! use std::path::PathBuf;
-//! use std::io;
 //!
 //! #[tokio::main]
 //! async fn main() {
-//!    let path = PathBuf::from("./test_assets/simple/spec.csv");
-//!    let mut reader = ReaderBuilder::new().trim(Trim::All).from_path(path).unwrap();
-//!    let mut clients: Clients = Default::default();
-//!    let iter = reader.deserialize::<IncomingTransaction>();
-//!    clients.process(iter).await.unwrap();
-//!    clients.output(io::stdout()).await.unwrap();
+//!     let path = PathBuf::from("./test_assets/simple/spec.csv");
+//!     let clients: Clients = Default::default();
+//!     run_async(path, clients).await.unwrap();
 //! }
 //! ```
+//!
+//! [`IncomingTransaction`]: crate::transaction::IncomingTransaction
 
 pub mod amount;
 pub mod client;

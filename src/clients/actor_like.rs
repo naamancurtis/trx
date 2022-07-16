@@ -74,7 +74,7 @@ impl AsyncClients for Clients {
             let mut cli = cli;
             'process: while let Some(trx) = rx.recv().await {
                 let IncomingTransaction { ty, tx, amount, .. } = trx;
-                if let Err(e) = cli.publish_transaction(tx, ty, amount) {
+                if let Err(e) = cli.process_transaction(tx, ty, amount) {
                     warn!(error = %e, "stopping processing for client {}", cli.id);
                     // If we have an error we have either had:
                     // - An unexpected, unrecoverable error

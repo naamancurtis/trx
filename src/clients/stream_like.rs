@@ -33,7 +33,7 @@
 //! [`SyncClient`]: crate::clients::synchronous::Clients
 
 use color_eyre::Result;
-use crossbeam_channel::{unbounded, Sender};
+use crossbeam_channel::{unbounded, Sender, TryRecvError};
 use tracing::error;
 
 use std::io::Write;
@@ -62,11 +62,12 @@ impl Default for Clients {
             let handle = thread::spawn(move || {
                 let mut client = SynchronousClients::default();
                 'process: loop {
-                    match r.recv() {
+                    match r.try_recv() {
                         Ok(msg) => {
                             client.publish_transaction(msg)?;
                         }
-                        Err(_) => break 'process,
+                        Err(TryRecvError::Empty) => thread::yield_now(),
+                        Err(TryRecvError::Disconnected) => break 'process,
                     };
                 }
                 Ok(client)

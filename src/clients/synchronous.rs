@@ -49,7 +49,7 @@ impl SyncClients for Clients {
     ) -> Result<()> {
         let client = self.0.entry(client).or_insert_with(|| Client::new(client));
         if !client.is_locked() {
-            match client.publish_transaction(tx, ty, amount) {
+            match client.process_transaction(tx, ty, amount) {
                 // TODO - Make this an enum match instead of a string
                 Err(e) if !e.to_string().starts_with("[FROZEN_ACCOUNT]") => return Err(e),
                 _ => {}

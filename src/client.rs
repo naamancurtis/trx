@@ -32,7 +32,7 @@ use crate::Amount;
 ///
 /// let mut client = Client::new(1);
 ///
-/// if let Err(e) = client.publish_transaction(1, TransactionType::Deposit, Some(Amount::try_from(10f32).unwrap())) {
+/// if let Err(e) = client.process_transaction(1, TransactionType::Deposit, Some(Amount::try_from(10f32).unwrap())) {
 ///     eprintln!("Error occurred {}", e);
 /// }
 /// ```
@@ -108,7 +108,7 @@ impl Client {
     /// - Invalid data (eg. A deposit or withdrawal with no amount)
     ///
     #[instrument(level = "debug", skip(self, amount), fields(client_id = %self.id), err)]
-    pub fn publish_transaction(
+    pub fn process_transaction(
         &mut self,
         transaction_id: u32,
         transaction_type: TransactionType,
@@ -120,6 +120,26 @@ impl Client {
             return Err(eyre!(
                 "[FROZEN_ACCOUNT]: unable to carry out transaction when the account is frozen"
             ));
+        }
+
+        if !self.transaction_log.contains_key(&transaction_id) {
+            // In this case we have a brand new transaction we've not seen before
+            match transaction_type {
+                TransactionType::Deposit if amount.is_some() => {
+                    self.deposit(transaction_id, amount.unwrap())
+                }
+                TransactionType::Withdrawal if amount.is_some() => {
+                    self.withdraw(transaction_id, amount.unwrap())
+                }
+                TransactionType::Deposit | TransactionType::Withdrawal => warn!(
+                    "unable to process transition type {:?} when no amount is provided",
+                    transaction_type
+                ),
+                _ => {
+                    warn!("Unable to process transaction type {:?} as transaction id {} does not exist for client {}", transaction_type, transaction_id, self.id);
+                }
+            }
+            return Ok(());
         }
 
         match self.transaction_log.remove(&transaction_id) {
@@ -152,26 +172,15 @@ impl Client {
                 self.transaction_log.insert(transaction_id, None);
             }
 
-            // This is a brand new transaction we have not seen before
-            None => match transaction_type {
-                TransactionType::Deposit if amount.is_some() => {
-                    self.deposit(transaction_id, amount.unwrap())
-                }
-                TransactionType::Withdrawal if amount.is_some() => {
-                    self.withdraw(transaction_id, amount.unwrap())
-                }
-                TransactionType::Deposit | TransactionType::Withdrawal => warn!(
-                    "unable to process transition type {:?} when no amount is provided",
-                    transaction_type
-                ),
-                _ => {
-                    warn!("Unable to process transaction type {:?} as transaction id: {} does not exist for client {}", transaction_type, transaction_id, self.id);
-                }
-            },
+            None => unreachable!("this is handled by the contains_key check above"),
         }
         Ok(())
     }
 
+    /// This will update the internally held totals on the funds and insert an entry in the
+    /// transaction log
+    ///
+    /// If this provided transaction id has already been processed, this will ignore it
     fn deposit(&mut self, transaction_id: u32, amount: Amount) {
         match self.transaction_log.entry(transaction_id) {
             Entry::Occupied(_) => {
@@ -187,6 +196,10 @@ impl Client {
         }
     }
 
+    /// This will update the internally held totals on the funds and insert an entry in the
+    /// transaction log
+    ///
+    /// If this provided transaction id has already been processed, this will ignore it
     fn withdraw(&mut self, transaction_id: u32, amount: Amount) {
         match self.transaction_log.entry(transaction_id) {
             Entry::Occupied(_) => {
@@ -351,7 +364,7 @@ mod tests {
             TransactionType::Resolve,
             TransactionType::Chargeback,
         ] {
-            let res = client.publish_transaction(tx_id, *tx, None);
+            let res = client.process_transaction(tx_id, *tx, None);
             assert!(
                 res.is_err(),
                 "if the account is frozen we should always error"
@@ -365,7 +378,7 @@ mod tests {
         let mut client = Client::new(1);
         let tx_id = 1;
         let tx_amt = 1.23f32;
-        client.publish_transaction(tx_id, TransactionType::Deposit, Some(Amount::new(tx_amt)?))?;
+        client.process_transaction(tx_id, TransactionType::Deposit, Some(Amount::new(tx_amt)?))?;
         assert_eq!(
             client.transaction_log.len(),
             1,
@@ -393,7 +406,7 @@ mod tests {
         let mut after = before.clone();
         let tx_id = 1;
         let tx_amt = 1.23f32;
-        after.publish_transaction(tx_id, TransactionType::Deposit, Some(Amount::new(tx_amt)?))?;
+        after.process_transaction(tx_id, TransactionType::Deposit, Some(Amount::new(tx_amt)?))?;
         check_has_not_mutated_state(before, after)?;
 
         Ok(())
@@ -405,7 +418,7 @@ mod tests {
         let mut after = before.clone();
         let tx_id = 3;
         let tx_amt = 1.23f32;
-        after.publish_transaction(
+        after.process_transaction(
             tx_id,
             TransactionType::Withdrawal,
             Some(Amount::new(tx_amt)?),
@@ -438,13 +451,13 @@ mod tests {
         let mut before = client_with_state();
         let tx_id = 3;
         let tx_amt = 1.23f32;
-        before.publish_transaction(
+        before.process_transaction(
             tx_id,
             TransactionType::Withdrawal,
             Some(Amount::new(tx_amt)?),
         )?;
         let mut after = before.clone();
-        after.publish_transaction(
+        after.process_transaction(
             tx_id,
             TransactionType::Withdrawal,
             Some(Amount::new(tx_amt)?),
@@ -459,7 +472,7 @@ mod tests {
         let tx_id = 1;
         let previous_available_balance = client.available_funds()?;
         let previous_held_balance = client.held_funds()?;
-        client.publish_transaction(tx_id, TransactionType::Dispute, None)?;
+        client.process_transaction(tx_id, TransactionType::Dispute, None)?;
         assert_eq!(
             client.available_funds()?,
             0f32,
@@ -489,9 +502,9 @@ mod tests {
     fn should_ignore_duplicate_dispute_requests() -> Result<()> {
         let mut before = client_with_state();
         let tx_id = 1;
-        before.publish_transaction(tx_id, TransactionType::Dispute, None)?;
+        before.process_transaction(tx_id, TransactionType::Dispute, None)?;
         let mut after = before.clone();
-        after.publish_transaction(tx_id, TransactionType::Dispute, None)?;
+        after.process_transaction(tx_id, TransactionType::Dispute, None)?;
 
         check_has_not_mutated_state(before, after)?;
         Ok(())
@@ -503,7 +516,7 @@ mod tests {
         let tx_id = 2;
         let previous_available_funds = client.available_funds()?;
         let previous_held_balance = client.held_funds()?;
-        client.publish_transaction(tx_id, TransactionType::Resolve, None)?;
+        client.process_transaction(tx_id, TransactionType::Resolve, None)?;
         assert!(
             (client.available_funds()? - (previous_held_balance + previous_available_funds)).abs()
                 < ALLOWABLE_ERROR,
@@ -527,9 +540,9 @@ mod tests {
     fn should_ignore_duplicate_resolve_requests() -> Result<()> {
         let mut before = client_with_state();
         let tx_id = 2;
-        before.publish_transaction(tx_id, TransactionType::Resolve, None)?;
+        before.process_transaction(tx_id, TransactionType::Resolve, None)?;
         let mut after = before.clone();
-        after.publish_transaction(tx_id, TransactionType::Resolve, None)?;
+        after.process_transaction(tx_id, TransactionType::Resolve, None)?;
 
         check_has_not_mutated_state(before, after)?;
         Ok(())
@@ -540,7 +553,7 @@ mod tests {
         let mut client = client_with_state();
         let tx_id = 2;
         let previous_available_funds = client.available_funds()?;
-        let err = client.publish_transaction(tx_id, TransactionType::Chargeback, None);
+        let err = client.process_transaction(tx_id, TransactionType::Chargeback, None);
         assert!(
             err.is_err(),
             "expected a failure from a publish transaction as the account is locked"
@@ -581,7 +594,7 @@ mod tests {
             TransactionType::Chargeback,
         ] {
             let mut after = before.clone();
-            after.publish_transaction(tx_id, *transition, Some(Amount::new(tx_amt)?))?;
+            after.process_transaction(tx_id, *transition, Some(Amount::new(tx_amt)?))?;
             check_has_not_mutated_state(before.clone(), after)?;
         }
         Ok(())
@@ -592,7 +605,7 @@ mod tests {
         let mut before = client_with_state();
         let tx_id = 3;
         let tx_amt = 1.23f32;
-        before.publish_transaction(
+        before.process_transaction(
             tx_id,
             TransactionType::Withdrawal,
             Some(Amount::new(tx_amt)?),
@@ -605,7 +618,7 @@ mod tests {
             TransactionType::Chargeback,
         ] {
             let mut after = before.clone();
-            after.publish_transaction(tx_id, *transition, Some(Amount::new(tx_amt)?))?;
+            after.process_transaction(tx_id, *transition, Some(Amount::new(tx_amt)?))?;
             check_has_not_mutated_state(before.clone(), after)?;
         }
         Ok(())
@@ -619,7 +632,7 @@ mod tests {
 
         for transition in &[TransactionType::Deposit, TransactionType::Withdrawal] {
             let mut after = before.clone();
-            after.publish_transaction(tx_id, *transition, Some(Amount::new(tx_amt)?))?;
+            after.process_transaction(tx_id, *transition, Some(Amount::new(tx_amt)?))?;
             check_has_not_mutated_state(before.clone(), after)?;
         }
         Ok(())
@@ -630,7 +643,7 @@ mod tests {
         let mut before = client_with_state();
         let tx_id = 2;
         let tx_amt = 1.23f32;
-        before.publish_transaction(tx_id, TransactionType::Resolve, None)?;
+        before.process_transaction(tx_id, TransactionType::Resolve, None)?;
 
         for transition in &[
             TransactionType::Deposit,
@@ -639,7 +652,7 @@ mod tests {
             TransactionType::Chargeback,
         ] {
             let mut after = before.clone();
-            after.publish_transaction(tx_id, *transition, Some(Amount::new(tx_amt)?))?;
+            after.process_transaction(tx_id, *transition, Some(Amount::new(tx_amt)?))?;
             check_has_not_mutated_state(before.clone(), after)?;
         }
         Ok(())

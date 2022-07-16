@@ -79,13 +79,13 @@ impl Add<Amount> for Amount {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        Amount(self.0 + rhs.0).round()
+        Amount(self.0 + rhs.0)
     }
 }
 
 impl AddAssign for Amount {
     fn add_assign(&mut self, rhs: Self) {
-        self.0 = (self.0 + rhs.0).round_dp(PRECISION)
+        self.0 = self.0 + rhs.0
     }
 }
 
@@ -93,13 +93,13 @@ impl Sub<Amount> for Amount {
     type Output = Self;
 
     fn sub(self, rhs: Amount) -> Self::Output {
-        Amount(self.0 - rhs.0).round()
+        Amount(self.0 - rhs.0)
     }
 }
 
 impl SubAssign for Amount {
     fn sub_assign(&mut self, rhs: Self) {
-        self.0 = (self.0 - rhs.0).round_dp(PRECISION)
+        self.0 = self.0 - rhs.0
     }
 }
 
@@ -107,7 +107,7 @@ impl TryFrom<f32> for Amount {
     type Error = rust_decimal::Error;
 
     fn try_from(value: f32) -> Result<Self, Self::Error> {
-        Ok(Self(Decimal::try_from(value)?))
+        Ok(Self(Decimal::try_from(value)?).round())
     }
 }
 
